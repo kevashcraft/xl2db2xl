@@ -1,4 +1,7 @@
 xl2db2xl
 ========
 
-Perl script, downloaded xls -> sqlite -> email new xls
+Purpose
+-------
+
+Download an xls file, parse it, store it in an sqlite database, then email the file
