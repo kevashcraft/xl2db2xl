@@ -1,0 +1,126 @@
+#!/bin/perl
+#
+# Name: xl2db2xl
+# Description: a perl script to get US Mint Sales Report data in <strike>xls</strike> html table format, store it in an sqlite database, then email a weekly version
+# Created by: Kevin Ashcraft
+# Created on: 2014-09-17 02:51
+#
+
+#
+# Planning
+# get the <strike>xcell</strike> html file
+# store each weeks info with date field
+# select info for this week
+
+use warnings;
+use strict;
+use DBI;
+use HTML::TableExtract;
+use File::Fetch;
+use DateTime;
+use Config::Simple;
+#use Data::Dumper;
+use File::Slurp;
+use Spreadsheet::WriteExcel;
+
+# load the config
+my $cfg = new Config::Simple('config');
+my $email = $cfg->param('email');
+my $url = $cfg->param('url');
+
+# get the date of the most recent Sunday
+my $date = DateTime->now();
+$date->subtract(days=> ($date->day_of_week) % 7);
+
+# get the file if it doesn't exist
+my $filename = 'xl2db2xl-'.$date->ymd.'.xls';
+if ( ! -e "/tmp/$filename") {
+	$url .= $date->month_name().'%20'.$date->day.',%20'.$date->year;
+	my $ff = File::Fetch->new(uri => $url);
+	my $where = $ff->fetch( to => '/tmp' ) or die $ff->error;
+	rename '/tmp/'.$ff->output_file, "/tmp/$filename";
+} else {
+	print "file already downloaded\n";
+}
+
+# connect to sqlite db
+my $dbh = DBI->connect("DBI:SQLite:dbname=xl2db2xl.db",'','', {RaiseError => 1})
+                or die $DBI::errstr;
+
+# create table statement
+my $create_stmt = qq(create table if not exists xl2db2xl(
+															program VARCHAR(64),
+															code VARCHAR(32),
+															product VARCHAR(64),
+															sales INT,
+															srdate DATE,
+															availability VARCHAR(32)
+															));
+
+# do the table creation															
+my $crv = $dbh->do($create_stmt);
+if($crv < 0){
+        print $DBI::errstr;
+}
+
+# open the html table file because life
+my $slurp = read_file("/tmp/$filename");
+my $te = HTML::TableExtract->new();
+$te->parse($slurp);
+
+# parse html table data
+my @data;
+foreach my $row ($te->rows) {
+	push(@data,$row);
+}
+
+# check if this date has already been processed
+my $stmt = $dbh->prepare("select count(*) from xl2db2xl where srdate = '".$data[3][4]."'");
+my $query = $stmt->execute;
+my @count = $stmt->fetchrow_array();
+
+# insert the data if it isn't there yet
+if($count[0] == 0) {
+	# Create the insert statement
+	my $insert = $dbh->prepare("insert into xl2db2xl(program,code,product,sales,srdate,availability) VALUES(?,?,?,?,?,?)");
+	my $c = 2;
+	while($data[$c][0]){
+#		print $data[$c][0].$data[$c][1].$data[$c][2].$data[$c][3].$data[$c][4].$data[$c][5]."\n";
+		$insert->execute($data[$c][0],$data[$c][1],$data[$c][2],$data[$c][3],$data[$c][4],$data[$c][5]);
+		$c++;
+	}
+} else {
+	print "none inserted\n";
+}
+
+# Create a new Excel workbook
+my $workbook = Spreadsheet::WriteExcel->new('payments.xls');
+
+#  Add and define a format
+my $fmt_center = $workbook->add_format(align=>'center');
+my $format = $workbook->add_format(
+                    bold => 1,
+                    merge => 1,
+                    size => 16,
+                    color => 'blue',
+                    align => 'center'); # Add a format
+
+#print "one";
+foreach my $name (@names) {
+
+    print $name;
+    # Get Employee Full Name
+    my $selemp = $dbh->prepare("select worker from events where worker like '%$name%' limit 1");
+    $selemp->execute();
+    my @worker = $selemp->fetchrow_array;
+
+    # Add a worksheet
+    my $worksheet = $workbook->add_worksheet($worker[0]);
+
+    $worksheet->set_column('A:Q', 20,$fmt_center);
+    $worksheet->set_row('2', 40);
+
+    $worksheet->write(2,2,$worker[0],$format);
+    my $col = 0;
+    my $row = 5;
+}
