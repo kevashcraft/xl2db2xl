@@ -31,7 +31,6 @@ my $url = $cfg->param('url');
 # get the date of the most recent Sunday
 my $date = DateTime->now();
 $date->subtract(days=> ($date->day_of_week) % 7);
-
 # get the file if it doesn't exist
 my $filename = 'xl2db2xl-'.$date->ymd.'.xls';
 if ( ! -e "/tmp/$filename") {
@@ -39,8 +38,6 @@ if ( ! -e "/tmp/$filename") {
 	my $ff = File::Fetch->new(uri => $url);
 	my $where = $ff->fetch( to => '/tmp' ) or die $ff->error;
 	rename '/tmp/'.$ff->output_file, "/tmp/$filename";
-} else {
-	print "file already downloaded\n";
 }
 
 # connect to sqlite db
@@ -89,38 +86,116 @@ if($count[0] == 0) {
 		$insert->execute($data[$c][0],$data[$c][1],$data[$c][2],$data[$c][3],$data[$c][4],$data[$c][5]);
 		$c++;
 	}
-} else {
-	print "none inserted\n";
 }
 
 # Create a new Excel workbook
-my $workbook = Spreadsheet::WriteExcel->new('payments.xls');
+my $workbook = Spreadsheet::WriteExcel->new('/tmp/xl2db2xl.xls');
 
 #  Add and define a format
 my $fmt_center = $workbook->add_format(align=>'center');
-my $format = $workbook->add_format(
-                    bold => 1,
+my $fmt_title = $workbook->add_format(
+                    bold => 0,
+					underline => 1,
                     merge => 1,
-                    size => 16,
-                    color => 'blue',
+                    size => 12,
                     align => 'center'); # Add a format
 
-#print "one";
-foreach my $name (@names) {
 
-    print $name;
-    # Get Employee Full Name
-    my $selemp = $dbh->prepare("select worker from events where worker like '%$name%' limit 1");
-    $selemp->execute();
-    my @worker = $selemp->fetchrow_array;
+# add a worksheet for the current data
+my $worksheet = $workbook->add_worksheet($date->ymd);
 
-    # Add a worksheet
-    my $worksheet = $workbook->add_worksheet($worker[0]);
+$worksheet->set_column('A:B', 20);
+$worksheet->set_column('C:C', 25);
+$worksheet->set_column('D:D', 20);
+$worksheet->set_column('E:E', 25);
+$worksheet->set_column('F:F', 25);
+$worksheet->set_column('G:G', 20);
+$worksheet->set_row(0,20);
 
-    $worksheet->set_column('A:Q', 20,$fmt_center);
-    $worksheet->set_row('2', 40);
 
-    $worksheet->write(2,2,$worker[0],$format);
-    my $col = 0;
-    my $row = 5;
+# write the title row
+my $col = 0;
+while ($data[0][$col]){
+	my $title = $data[0][$col];
+	$title =~ s/^\s+|\s+$//g;
+	$worksheet->write(0,$col,$title,$fmt_title);
+	$col++
 }
+my $coltol = $col;
+# write the rest of the data
+my $row = 1;
+while ($data[$row][0]){
+	$col = 0;
+	while ($data[$row][$col]){
+	    $worksheet->write($row,$col,$data[$row][$col],$fmt_center);
+		$col++;
+	}
+	$row++;
+}
+
+# add extra data
+#
+my $dates_stmt = $dbh->prepare("select srdate from xl2db2xl group by srdate");
+$dates_stmt->execute;
+my @dates = $dates_stmt->fetchrow_array;
+
+my $prev_sales_stmt = $dbh->prepare("select sales from xl2db2xl where srdate=? and code=?");
+
+#go to home
+$col=0;
+$row=0;
+# add xl col title
+$col=$coltol;
+$worksheet->write(0,$col,"Previous Sales",$fmt_title);
+$col++;
+$worksheet->write(0,$col,"+/-",$fmt_title);
+$row++;
+#add data
+while($data[$row][3]){
+	$prev_sales_stmt->execute($dates[0],$data[$row][1]);
+	my @prev_sales = $prev_sales_stmt->fetchrow_array();
+	if($prev_sales[0]){
+		$col=$coltol;
+		my $i=$row-1;
+		$worksheet->write($row,$col,$prev_sales[0],$fmt_center);
+		$col++;
+		$prev_sales[0] =~ s/,//;
+		$data[$row][3] =~ s/,//;
+		my $diff = $data[$row][3] - $prev_sales[0];
+		$worksheet->write($row,$col,$diff,$fmt_center);
+	} else {
+		$worksheet->write($row,$coltol,'NA',$fmt_center);
+	}
+	$row++;
+}
+
+my $codes_stmt = $dbh->prepare("select code from xl2db2xl group by code");
+$codes_stmt->execute;
+
+$row=0;
+$col=0;
+my $prevsheet = $workbook->add_worksheet("Previous");
+$prevsheet->write($row,$col,"Program Item",$fmt_center);
+$dates_stmt->execute;
+while(@dates = $dates_stmt->fetchrow_array){
+	$col++;
+	$prevsheet->write($row,$col,$dates[0],$fmt_title);
+}
+
+
+while(my @codes = $codes_stmt->fetchrow_array()){
+	$row++;
+	$col=0;
+	$prevsheet->write($row,$col,$codes[0],$fmt_center);
+	$col++;
+	$dates_stmt->execute;
+	while(@dates = $dates_stmt->fetchrow_array){
+		$prev_sales_stmt->execute($dates[0],$codes[0]);
+		my @prev_sales = $prev_sales_stmt->fetchrow_array();
+		$prevsheet->write($row,$col,$prev_sales[0],$fmt_center) if ($prev_sales[0]);
+		$col++;
+	}
+}
+$prevsheet->set_column('A:Z', 20);
+
+
