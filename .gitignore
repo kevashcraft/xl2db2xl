@@ -1,4 +1,5 @@
 config
 .db
 test
+.gd.yml
 

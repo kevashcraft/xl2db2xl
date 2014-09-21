@@ -32,7 +32,7 @@ my $url = $cfg->param('url');
 my $date = DateTime->now();
 $date->subtract(days=> ($date->day_of_week) % 7);
 # get the file if it doesn't exist
-my $filename = 'xl2db2xl-'.$date->ymd.'.xls';
+my $filename = 'xl2db2xl-raw-'.$date->ymd.'.xls';
 if ( ! -e "/tmp/$filename") {
 	$url .= $date->month_name().'%20'.$date->day.',%20'.$date->year;
 	my $ff = File::Fetch->new(uri => $url);
@@ -89,7 +89,7 @@ if($count[0] == 0) {
 }
 
 # Create a new Excel workbook
-my $workbook = Spreadsheet::WriteExcel->new('/tmp/xl2db2xl.xls');
+my $workbook = Spreadsheet::WriteExcel->new('/tmp/xl2db2xl-'.$date->ymd.'.xls');
 
 #  Add and define a format
 my $fmt_center = $workbook->add_format(align=>'center');
@@ -199,3 +199,16 @@ while(my @codes = $codes_stmt->fetchrow_array()){
 $prevsheet->set_column('A:Z', 20);
 
 
+$workbook->close();
+
+
+## Upload to Google Drive
+use File::Basename;
+use Net::Google::Drive::Simple;
+
+my $dirname = dirname(__FILE__);
+
+my $gd = Net::Google::Drive::Simple->new(
+										config_file => "$dirname/.gd.yml",
+										);
+$gd->file_upload('/tmp/xl2db2xl-'.$date->ymd.'.xls','0BxUf5kn-bPJZLTVwSDhPMkZOejg');
