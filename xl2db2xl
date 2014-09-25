@@ -21,10 +21,12 @@ use DateTime;
 use Config::Simple;
 #use Data::Dumper;
 use File::Slurp;
-use Spreadsheet::WriteExcel;
+use Excel::Writer::XLSX;
+use File::Basename;
 
 # load the config
-my $cfg = new Config::Simple('config');
+my $confile = dirname(__FILE__) . '/config';
+my $cfg = new Config::Simple($confile);
 my $email = $cfg->param('email');
 my $url = $cfg->param('url');
 
@@ -89,7 +91,7 @@ if($count[0] == 0) {
 }
 
 # Create a new Excel workbook
-my $workbook = Spreadsheet::WriteExcel->new('/tmp/xl2db2xl-'.$date->ymd.'.xls');
+my $workbook = Excel::Writer::XLSX->new('/tmp/xl2db2xl-'.$date->ymd.'.xlsx');
 
 #  Add and define a format
 my $fmt_center = $workbook->add_format(align=>'center');
